@@ -1,7 +1,3 @@
-"""Interact with a model"""
-
-__author__ = "Guillaume Genthial"
-
 from pathlib import Path
 import functools
 import json

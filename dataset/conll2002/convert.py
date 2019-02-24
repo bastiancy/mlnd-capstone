@@ -1,5 +1,6 @@
 from pathlib import Path
 
+
 def convert_words(folder, lang, name):
     with Path(folder, "{}.{}".format(lang, name)).open() as f:
         words = []
