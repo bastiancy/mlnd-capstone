@@ -1,8 +1,6 @@
----
-title: "Machine Learning Engineer Nanodegree - Capstone Project"
-date: "February 2019"
-author: "Bastian Carvajal Yañez"
----
+# Machine Learning Engineer Nanodegree - Capstone Project
+
+**Date: February 2019 / Author: Bastian Carvajal Yañez**
 
 This is my capstone project for the Udacity MLND. You can find the [proposal.pdf](proposal/proposal.pdf) and the [report.pdf](proposal/report.pdf) in this repository.
 
@@ -70,19 +68,19 @@ This will produce the following files:
 │   │   └── vocab.words.txt
 ```
 
-#### Train de model with active learning
+#### Train the model with active learning
 
 **Note:** I provide pre-trained models, see the next section! ;)
 
 To train the model use the next command:
 
 ```
-python train.py -data_dir ./dataset/conll2002/esp -out_dir ./results/esp -sampling lc run_counts 10
+python train.py -data_dir ./dataset/conll2002/esp -out_dir ./results/esp -sampling lc -run_counts 10
 ```
 
 This will run 10 train steps, using _least confidence_ as the sampling method. This means that the model will be incrementally updated using more data. For each step the model will choose what annotated examples add to its train dataset.
 
-At regular intervals the model will save checkpoint and train statistics, tha you can visualize in _Tensorboard_. For each checkpoint a validation step will be executed on the corresponding `testa` dataset.
+At regular intervals the model will save checkpoint and train statistics, that you can visualize in _Tensorboard_. For each checkpoint a validation step will be executed on the corresponding `testa` dataset.
 
 ```
 tensorboard --logdir ./results/esp
