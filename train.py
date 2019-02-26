@@ -13,7 +13,7 @@ from tf_metrics import precision, recall, f1
 # Global config
 flags = tf.app.flags
 FLAGS = flags.FLAGS
-flags.DEFINE_string('data_dir', '../dataset/conll2002/ned', 'Folder containing the formated dataset (see convert.py).')
+flags.DEFINE_string('data_dir', './dataset/conll2002/ned', 'Folder containing the formated dataset (see convert.py).')
 flags.DEFINE_string('out_dir', './results/ned', 'Folder where the model, logs, and tensorboard metrics will be saved.')
 flags.DEFINE_string('sampling', 'lc', 'Sampling mode, "lc" or "rand".')
 flags.DEFINE_integer('run_counts', 2, 'Ho many times we want to do retrain for the Online Learning.')
@@ -326,7 +326,6 @@ def main(_):
     print("\n>> Finished in {:.3f} secs".format(time.time() - start))
     for (name, timing) in run_times:
         print(">> Run {} took {:.3f} secs".format(name, timing))
-    print("\n")
 
 
 if __name__ == '__main__':
