@@ -2,7 +2,7 @@
 
 **Date: February 2019 / Author: Bastian Carvajal Yañez**
 
-This is my capstone project for the Udacity MLND. You can find the [proposal.pdf](proposal/proposal.pdf) and the [report.pdf](proposal/report.pdf) in this repository.
+This is my capstone project for the Udacity MLND. You can find the [proposal.pdf](proposal/proposal.pdf) and the [report.pdf](report/report.pdf) in this repository.
 
 
 ## Setup
