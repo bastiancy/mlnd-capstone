@@ -13,10 +13,12 @@ from tf_metrics import precision, recall, f1
 # Global config
 flags = tf.app.flags
 FLAGS = flags.FLAGS
-flags.DEFINE_string('data_dir', '../dataset/conll2002/esp', 'Folder containing the formated dataset (see convert.py).')
-flags.DEFINE_string('out_dir', './results/esp', 'Folder where the model, logs, and tensorboard metrics will be saved.')
+flags.DEFINE_string('data_dir', '../dataset/conll2002/ned', 'Folder containing the formated dataset (see convert.py).')
+flags.DEFINE_string('out_dir', './results/ned', 'Folder where the model, logs, and tensorboard metrics will be saved.')
 flags.DEFINE_string('sampling', 'lc', 'Sampling mode, "lc" or "rand".')
+flags.DEFINE_integer('run_counts', 2, 'Ho many times we want to do retrain for the Online Learning.')
 flags.DEFINE_boolean('verbose', True, 'Wheter print tensorflow logs to console.')
+SAMPLING_MODES = ['rand', 'lc']
 
 
 def fwords(name, folder=FLAGS.data_dir):
@@ -132,22 +134,19 @@ def model_fn(features, labels, mode, params):
     crf_params = tf.get_variable("crf", [num_tags, num_tags], dtype=tf.float32)
     pred_ids, best_score = tf.contrib.crf.crf_decode(logits, crf_params, nwords)
 
-    # Score used for active learning
-    score = None
-    if params['sampling'] == 'lc':
-        score = tf.to_float(1.0) - best_score
-    elif params['sampling'] == 'mnlp':
-        score = (best_score / tf.to_float(nwords))
-
     if mode == tf.estimator.ModeKeys.PREDICT:
         # Predictions
         reverse_vocab_tags = tf.contrib.lookup.index_to_string_table_from_file(params['tags'])
         pred_strings = reverse_vocab_tags.lookup(tf.to_int64(pred_ids))
         predictions = {
             'pred_ids': pred_ids,
-            'tags': pred_strings,
-            'score': score
+            'tags': pred_strings
         }
+
+        # Score used for active learning
+        if params['sampling'] == 'lc':
+            predictions['score'] = tf.to_float(1.0) - best_score
+
         return tf.estimator.EstimatorSpec(mode, predictions=predictions)
     else:
         # Loss
@@ -178,17 +177,16 @@ def model_fn(features, labels, mode, params):
                 mode, loss=loss, train_op=train_op)
 
 
-def run_train(train_inpf, eval_inpf, run_dir, params=None):
+def run_train(train_inpf, eval_inpf, run_dir, params=None, warm_start_from=None):
     """ Estimator, train and evaluate"""
     cfg = tf.estimator.RunConfig(save_checkpoints_steps=params['train_save_checkpoints_steps'],
                                  save_summary_steps=params['train_save_summary_steps'],
                                  log_step_count_steps=params['train_log_step_count_steps'])
-    estimator = tf.estimator.Estimator(model_fn, run_dir, cfg, params)
+    estimator = tf.estimator.Estimator(model_fn, run_dir, cfg, params, warm_start_from=warm_start_from)
 
     Path(estimator.eval_dir()).mkdir(parents=True, exist_ok=True)
     hook = tf.contrib.estimator.stop_if_no_increase_hook(
-        estimator, 'f1', params['stop_max_steps'], run_every_steps=params['stop_run_every_steps'],
-        run_every_secs=None)
+        estimator, 'f1', params['stop_max_steps'], run_every_secs=params['stop_run_every_secs'])
 
     train_spec = tf.estimator.TrainSpec(input_fn=train_inpf, hooks=[hook])
     eval_spec = tf.estimator.EvalSpec(input_fn=eval_inpf, throttle_secs=params['eval_throttle_secs'])
@@ -217,8 +215,11 @@ def main(_):
 
     random.seed(42)
     tf.random.set_random_seed(42)
-    assert FLAGS.sampling in ['rand', 'lc'], 'sampling method is invalid!'
+    assert FLAGS.sampling in SAMPLING_MODES, 'Sampling method is invalid!'
+    assert FLAGS.run_counts >= 2, 'The minimum for runs counts is 2!'
+
     start = time.time()
+    run_times = []
 
     # Hyperparameters
     params = {
@@ -235,12 +236,12 @@ def main(_):
         'chars': str(Path(FLAGS.data_dir, 'vocab.chars.txt')),
         'tags': str(Path(FLAGS.data_dir, 'vocab.tags.txt')),
         'glove': str(Path(FLAGS.data_dir, 'glove.npz')),
-        'train_save_checkpoints_steps': 100,
-        'train_save_summary_steps': 100,
-        'train_log_step_count_steps': 100,
-        'stop_max_steps': 500,
-        'stop_run_every_steps': 100,
-        'eval_throttle_secs': 5,
+        'train_save_checkpoints_steps': 10,
+        'train_save_summary_steps': 10,
+        'train_log_step_count_steps': 10,
+        'stop_max_steps': 200,
+        'stop_run_every_secs': 20,
+        'eval_throttle_secs': 0,
     }
 
     run_dir = str(Path(FLAGS.out_dir, '{}-0'.format(params['sampling'])))
@@ -262,7 +263,7 @@ def main(_):
 
     # Here we run multiple passes of the online learning.
     # Each time data from the pool will be choosen, and the model will be retrain on the updated dataset
-    for i in range(1, 10):
+    for i in range(1, FLAGS.run_counts):
         run_name = '{}-{}'.format(params['sampling'], i)
         run_dir = str(Path(FLAGS.out_dir, run_name))
         Path(run_dir).mkdir(parents=True, exist_ok=False)
@@ -305,20 +306,27 @@ def main(_):
                 f_words.write("\n" + line_words[index].strip())
                 f_tags.write("\n" + line_tags[index].strip())
 
-        # Use the updated "train" dataset to retrain the model
+        # Use the updated "train" dataset to retrain the model.
+        # We use the same validation dataset as before.
         train_inpf = functools.partial(input_fn,
                                        fwords('train', folder=FLAGS.out_dir),
                                        ftags('train', folder=FLAGS.out_dir),
                                        params, shuffle_and_repeat=True)
-        estimator = run_train(train_inpf, eval_inpf, run_dir, params=params)
 
+        # We want to incrementaly update de model so we warm it up from the latest checkpoint
+        warm_dir = str(Path(FLAGS.out_dir, '{}-{}'.format(params['sampling'], i - 1)))
+        estimator = run_train(train_inpf, eval_inpf, run_dir, params=params, warm_start_from=warm_dir)
+
+        run_times.append((run_name, time.time() - start_run))
         copyfile(fwords('train', folder=FLAGS.out_dir), fwords(run_name + '.train', folder=FLAGS.out_dir))
         copyfile(ftags('train', folder=FLAGS.out_dir), ftags(run_name + '.train', folder=FLAGS.out_dir))
-        if params['sampling'] in ['lc']:
+        if Path(fscores('pool', folder=FLAGS.out_dir)).is_file():
             copyfile(fscores('pool', folder=FLAGS.out_dir), fscores(run_name + '.pool', folder=FLAGS.out_dir))
-        print("\n>> Run {} took {:.3f} secs\n".format(run_name, time.time() - start_run))
 
-    print("\n>> Finished in {:.3f} secs\n".format(time.time() - start))
+    print("\n>> Finished in {:.3f} secs".format(time.time() - start))
+    for (name, timing) in run_times:
+        print(">> Run {} took {:.3f} secs".format(name, timing))
+    print("\n")
 
 
 if __name__ == '__main__':
