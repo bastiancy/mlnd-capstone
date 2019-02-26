@@ -205,12 +205,14 @@ def save_pool_predictions(estimator, test_inpf):
 def main(_):
     # Logging
     Path(FLAGS.out_dir).mkdir(exist_ok=True, parents=True)
-    tf.logging.set_verbosity(logging.INFO)
-    handlers = [
-        logging.FileHandler(str(Path(FLAGS.out_dir, 'main.log')))
-    ]
     if FLAGS.verbose:
-        handlers.append(logging.StreamHandler(sys.stdout))
+        tf.logging.set_verbosity(logging.INFO)
+    else:
+        tf.logging.set_verbosity(logging.ERROR)
+    handlers = [
+        logging.FileHandler(str(Path(FLAGS.out_dir, 'main.log'))),
+        logging.StreamHandler(sys.stdout)
+    ]
     logging.getLogger('tensorflow').handlers = handlers
 
     random.seed(42)

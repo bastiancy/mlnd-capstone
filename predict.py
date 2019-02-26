@@ -1,16 +1,16 @@
-from pathlib import Path
-import functools
-import json
+"""Reload and serve a saved model"""
+
 import random
+from pathlib import Path
 import numpy as np
+import argparse
 import tensorflow as tf
 
-# Global config
-flags = tf.app.flags
-FLAGS = flags.FLAGS
-flags.DEFINE_string('line', None, 'The exaple text to process.')
-flags.DEFINE_string('model_dir', './results/ned/lc-8', 'Folder where the model checkpoint is located.')
-flags.DEFINE_string('params_file', './results/ned/params.json', 'Path to the parameters file.')
+parser = argparse.ArgumentParser()
+parser.add_argument('model_dir', help='Folder with the exported model')
+parser.add_argument('--line', help='The exaple text to process.')
+parser.add_argument('--sample_words', help='File with one sentence per line')
+parser.add_argument('--sample_tags', help='File with one sentence per line')
 formatters = {
     'RED': '\033[91m',
     'GREEN': '\033[92m',
@@ -18,13 +18,10 @@ formatters = {
     'END': '\033[0m',
 }
 
-from train import model_fn, fwords, ftags
 
-
-def pretty_print(line, preds, golds=None):
-    words = line.strip().split()
+def pretty_print(words, preds, golds=None):
     lengths = [max(len(w), len(p)) for w, p in zip(words, preds)]
-    padded_words = [w + (l - len(w)) * ' ' for w, l in zip(words, lengths)]
+    padded_words = [w.decode() + (l - len(w)) * ' ' for w, l in zip(words, lengths)]
     padded_preds = [p.decode() + (l - len(p)) * ' ' for p, l in zip(preds, lengths)]
     print('words : {}'.format(' '.join(padded_words)))
 
@@ -33,7 +30,6 @@ def pretty_print(line, preds, golds=None):
         values['TEXT'] = ' '.join(padded_preds)
         print('preds : {YELLOW}{TEXT}{END}'.format(**values))
     else:
-        golds = golds.strip().split()
         lengths = [max(len(w), len(p)) for w, p in zip(words, golds)]
         padded_golds = [w + (l - len(w)) * ' ' for w, l in zip(golds, lengths)]
         print('labels: {}'.format(' '.join(padded_golds)))
@@ -45,45 +41,33 @@ def pretty_print(line, preds, golds=None):
         print('preds : {}'.format(' '.join(padded_preds)))
 
 
-def predict_input_fn(line):
-    # Words
-    words = [w.encode() for w in line.strip().split()]
-    nwords = len(words)
+if __name__ == '__main__':
+    args = parser.parse_args()
 
-    # Wrapping in Tensors
-    words = tf.constant([words], dtype=tf.string)
-    nwords = tf.constant([nwords], dtype=tf.int32)
+    subdirs = [x for x in Path(args.model_dir).iterdir()
+               if x.is_dir() and 'temp' not in str(x)]
+    latest = str(sorted(subdirs)[-1])
+    predict_fn = tf.contrib.predictor.from_saved_model(latest)
 
-    return (words, nwords), None
+    if args.line is not None:
+        words = [w.encode() for w in args.line.split()]
+        nwords = len(words)
+        predictions = predict_fn({'words': [words], 'nwords': [nwords]})
+        pretty_print(words, predictions['tags'][0])
 
-
-def main(_):
-    with Path(FLAGS.params_file).open() as f:
-        params = json.load(f)
-
-    gold = None
-    if FLAGS.line is None:
-        with Path(fwords('testb')).open('r') as f_words, \
-                Path(ftags('testb')).open('r') as f_tags:
+    elif args.sample_words is not None and args.sample_tags is not None:
+        with Path(args.sample_words).open('r') as f_words, \
+                Path(args.sample_tags).open('r') as f_tags:
             line_words = f_words.readlines()
             line_tags = f_tags.readlines()
+
         idx = random.randint(0, len(line_words) - 1)
         line = line_words[idx]
         gold = line_tags[idx]
-    else:
-        line = FLAGS.line
 
-    params['words'] = str(Path(FLAGS.data_dir, 'vocab.words.txt'))
-    params['chars'] = str(Path(FLAGS.data_dir, 'vocab.chars.txt'))
-    params['tags'] = str(Path(FLAGS.data_dir, 'vocab.tags.txt'))
-    params['glove'] = str(Path(FLAGS.data_dir, 'glove.npz'))
+        words = [w.encode() for w in line.split()]
+        nwords = len(words)
+        predictions = predict_fn({'words': [words], 'nwords': [nwords]})
 
-    estimator = tf.estimator.Estimator(model_fn, FLAGS.model_dir, params=params)
-    predict_inpf = functools.partial(predict_input_fn, line)
-    for pred in estimator.predict(predict_inpf):
-        pretty_print(line, pred['tags'], gold)
-        break
-
-
-if __name__ == '__main__':
-  tf.app.run()
+        golds = gold.strip().split()
+        pretty_print(words, predictions['tags'][0], golds)
