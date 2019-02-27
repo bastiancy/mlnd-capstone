@@ -17,7 +17,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # Load vocab
-    with Path(args['dest'], 'vocab.words.txt').open() as f:
+    with Path(args.dest, 'vocab.words.txt').open() as f:
         word_to_idx = {line.strip(): idx for idx, line in enumerate(f)}
     size_vocab = len(word_to_idx)
 
@@ -43,4 +43,4 @@ if __name__ == '__main__':
     print('- done. Found {} vectors for {} words'.format(found, size_vocab))
 
     # Save np.array to file
-    np.savez_compressed(str(Path(args['dest'], 'glove.npz')), embeddings=embeddings)
+    np.savez_compressed(str(Path(args.dest, 'glove.npz')), embeddings=embeddings)

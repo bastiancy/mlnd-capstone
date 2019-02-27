@@ -13,9 +13,9 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     def convert_words(lang, name):
-        Path(args['dest']).mkdir(parents=True, exist_ok=True)
+        Path(args.dest).mkdir(parents=True, exist_ok=True)
 
-        with Path(args['src'], "{}.{}".format(lang, name)).open() as f:
+        with Path(args.src, "{}.{}".format(lang, name)).open() as f:
             words = []
             tags = []
 
@@ -25,13 +25,13 @@ if __name__ == '__main__':
                     words.append(data[0])
                     tags.append(data[2])
                 else:
-                    with Path(args['dest'], lang, "{}.words.txt".format(name)).open(mode='a') as f2:
+                    with Path(args.dest, lang, "{}.words.txt".format(name)).open(mode='a') as f2:
                         f2.write(" ".join(words) + "\n")
-                    with Path(args['dest'], lang, "{}.tags.txt".format(name)).open(mode='a') as f2:
+                    with Path(args.dest, lang, "{}.tags.txt".format(name)).open(mode='a') as f2:
                         f2.write(" ".join(tags) + "\n")
                     words = []
                     tags = []
 
-    convert_words(args['lang'], 'testa')
-    convert_words(args['lang'], 'testb')
-    convert_words(args['lang'], 'train')
+    convert_words(args.lang, 'testa')
+    convert_words(args.lang, 'testb')
+    convert_words(args.lang, 'train')

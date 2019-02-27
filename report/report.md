@@ -8,9 +8,9 @@ author: "Bastian Carvajal Yañez"
 
 ## Project Overview
 
-For many decades the algorithms used for Natural Language Processing, on tasks like machine translation and language understanding, were based on complex rules created manually; but today the state of the art was achieved with the use of Deep Neural Networks in many domains [@young2018recent]. This change was driven by the increased availability of computing resources, but most importantly by the emergence of large annotated corpus of text, like OntoNotes [@weischedel2013ontonotes]. But, because training this kind of algorithms is a costly process, researchers are looking for ways to train them with small amounts of data.
+Neural Networks can achieve better accuracy for Natural Language Processing tasks compared to traditional rule-based algorithms, or even other types of Machine Learning models [@young2018recent]. Yet, a major problem is that you need a lot of data to train them.
 
-In this project I explore the Active Learning strategy to train a Recurrent Neural Network for _sequence tagging_. The algorithm will be given batches of sentences, with the text tokenized, which means that the text will be separated into words. For example the phrase _"Jose trabaja para CNN en Sao Paulo, Brasil."_ will be tokenized and converted to a list:
+In this project I explore the Active Learning ^[[Wikipedia: Active learning](https://en.wikipedia.org/wiki/Active_learning_(machine_learning))] strategy to train a Recurrent Neural Network for _Sequence Tagging_. In particular, the focus is on the Named Entity Recognition (NER) task. Here, we feed into the algorithm batches of sentences, with the text tokenized, which means that the text will be separated into words. For example the phrase _"Jose trabaja para CNN en Sao Paulo, Brasil."_ will be tokenized and converted to a list:
 
 ```
 ['Jose', 'trabaja', 'para', 'CNN', 'en', 'Sao', 'Paulo', ',', 'Brasil', '.']
@@ -24,9 +24,7 @@ Then the algorithm should predict the labels for each of the tokens, and output 
  
 ```
 
-The resulting implementation, based on bidirectional LSTM + CRF, and an Active Learning traiing procedure, achieves state-of-the art performance for the NER task [@shen2017deep], on the popualar ConLL2002 Dataset [@conll2002]. The key insight is that the model only uses 30% of the available training data...
-
-**REVISAR!!!!**
+The resulting implementation, based on _Bidirectional LSTM ^[[Wikipedia: Long short-term memory](https://en.wikipedia.org/wiki/Long_short-term_memory)] + CRF ^[[Wikipedia: Conditional random field](https://en.wikipedia.org/wiki/Conditional_random_field)]_, plus the application of Active Learning, can make the model achieve state-of-the art performance for the NER task [@shen2017deep], on the popular ConLL2002 Dataset [@conll2002]. The key insight is that the model **only uses 40% of the available training data**, which can potentially reduce the cost of annotation.
 
 
 ## Problem Statement
@@ -242,56 +240,84 @@ We calculate the loss by computing the log likelihood of tag sequences, using th
 
 ### Active learning
 
-Last but not least, the active learning process has its own challenges. 
+Last but not least, the Active Learning process has its own challenges. The main issue is that this process requires _incremental update of the weights_, this is because each time we train the model with a small sample from the pool, then immediately after we need to run predictions over the complete pool of data. Luckily, the `tf.estimator.Estimator` class has the `warm_start_from` property that allow you to use the weights from a previous checkpoint.
 
-**COMPLETAR!!!!**
+The other difficulty lies with the Active Learning heuristic explained before, as we need to "simulate the process of interactively annotate the examples by a human". To implement this _simulation_ we run the training in a loop, before each retrain we load the last saved checkpoint to make the predictions over the `train.words.txt` file, then we save all the scores on a new file `pool.scores.txt` making sure to preserve the order. From this file we choose the indices of the next samples to annotate, and peek the corresponding labels from the `train.tags.txt` file.  Finally, we run the train on the updated dataset, and the process repeats.
 
 
 ## Refinement
 
-Todo...
+In early trials the model generated the embeddings as part of the training process. Then I realized this was taking too much time, and it would hardly converge on such a small dataset. I decided to use pre-trained embeddings instead, so the model do not have to compute them at every train step.
 
-**COMPLETAR!!!!**
+Another refinement was basically tuning the hyperparameters. The first run only uses 1% of the training data so the _batch size_ has to be less than that (80 samples), but the subsequent runs used a higher _batch size_ (160 samples)  as it has more data available. Also, the _epochs_ had to be small (5 epochs) for the training to be as fast as possible; in the active learning setting it is preferred to ask for feedback quickly, rather that spent a lot of time training on the whole dataset.
+ 
 
 # IV. Results
 
 ## Model Evaluation and Validation
 
-Todo...
+To evaluate the model performance the following metrics were calculated after each training run: F1 score (and its components like Accuracy, Precision, Recall), the Loss, and the relative Step time. The validation file `ned.testa` was used to compute those scores; it was used only to tune the hyperparameters, and not as part of the training dataset.
 
-**COMPLETAR!!!!**
+![Metrics for the Dutch model.](./picture9.png){ width=85% }
+
+In the Figure 4 above, we can see the metrics calculated for the _dutch_ language dataset. On the left graph we see the F1 score (range $(0, 1) \in \mathbb{R}$) related to the percentage of the dataset used for training (between 1% and 90%). On the right, we see computed loss. In both cases the lines plotted represent the combination of the sampling method used, and the dataset on which the metrics were calculated on (trainig and validation datastest).
+
+Next, in the Figure 5 we see three lines: the **baseline** (green) is the performance that the model achieves on a purely supervised learning setting (i.e. a single training with the full dataset, for 25 epochs). The other two lines correspond to the performance of the _Active Learning_ process, using two different sampling methods: **Least confidence** (blue) and **Random** (orange). The main difference between these methods is that the later does not use the predictions scores to choose examples from the pool (i.e it could be more efficient at the beginning because it does less computations).
+
+In Figure 5 the dotted lines mark the point in which the accuracy of the model (~46% of dataset) is roughly the same as the baseline (F1 ~0.66).
+
+![Comparison of the performance between active learning (lc, rand) and supervised learning (baseline).](./picture7.png){ width=55% }
+
+In the below table the mean time for each training run is reported (these are calculated while using an NVIDIA GTX 1060 GPU). We can see that the baseline (i.e. the supervised learning approach) is the slowest, and the _random sampling_ is the fastest. This is coherent because the baseline runs the training on more epochs; also the _rand_ sampling does not need to run predictions to choose samples, while the _lc_ does.
+
+| dataset | sampling | mean time (secs) |
+| ------- | -------- | ---------------- |
+| ned | lc | 43.2 |
+| ned | rand | 24.3 |
+| ned | baseline | 829.8 |
+
 
 ## Justification
 
-Todo...
+First, we can see in Figure 5 that the active learning achieves the same score as the _baseline_, but using **only half of the labeled dataset**. These results are aligned with the initial goals of the project, which was _training the model with a smaller dataset_  while maintaining the accuracy; this could potentially reduce the cost of annotation.
 
-**COMPLETAR!!!!**
+In the next table, we compare the performance of this model with the ones defined in the benchmark. While there cant be a direct comparison, because they used a slightly different dataset, the score achieved for our model is still very competitive; and with some tweaks this could be further improved.
+
+| algorithm | dataset | sampling | best F1 score |
+| --------- | ------- | -------- | ------------- |
+| bi-LSTM + CRF (this) | Conll2002 | lc | 66.21 |
+| bi-LSTM + CRF (this) | Conll2002 | rand | 75.34 |
+| bi-LSTM + CRF [@huang2015bidirectional] | CoNLL2003 | - | 84.26 |
+| CNN + CNN + CRF [@shen2017deep] | CoNLL2003 | - | 90.35 |
+
 
 # V. Conclusion
 
 ## Free-Form Visualization
 
-Todo...
+The Figure 6 depicts some testing I did on the resulting models, for both languages. This is generated with the `predict.py` file, which reads a folder of the exported model (generated by `export.py`). In the example at the top of the image, the model gives predictions over an unseen text; the predictions are in yellow because there were not true labels to compare with. The rest of the examples were taken at random from the `testb` dataset, in this case the model compared its predictions with the real labels and marked the token green if the they match, or red otherwise.
 
-**COMPLETAR!!!!**
+![Testing in the console the predictions of the exported models.](./picture10.png){ width=80% }
 
 
 ## Reflection
 
-Todo...
+Using _Deep Learning_ for _Natural Language Processing_ tasks is a growing trend in recent years. Given its incredible success on other areas like _Computer Vision_ it is reasonable to think that it could be a good fit for NLP, but  the fundamental difference between these domains is that images are a dense representations, and text is sparse. This leads to the use of Recurrent Neural Networks which fits perfectly this domain, but the main issue of DL remains: you need a whole bunch of information to train this algorithms.
 
-**COMPLETAR!!!!**
+Fortunately on the internet there is an infinite amount of text you can feed into an RNN, but only a small percent is annotated. And this is a must, because in general RNN use supervised learning. Here lies the need to find an alternative, and in this project I explored Active Learning.
+
+The results of this project reflects that this approach has the potential to solve the main issue of DL, or at least alleviate it. And this is my main motivation, find a way to reduce the cost of annotating text corpora, and be able to show the usefulness of DL.
+
+In this project I've implemented an automatic pipeline for the AL process, but the idea is to take this approach in a real setting. For example, for annotation projects with a tight budget, the annotator could interactively train the algorithm by giving feedback on its predictions.
+
+Lastly, I had to say that given the time constraints I could not get the best performance out of the model, but I'll explain in the next section some potential improvements for the implementation.
 
 
 ## Improvement
 
-Todo...
+One way to improve this algorithm is the use of _character level representation_ as suggested in [@shen2017deep]. With these the model could potentially learn sequences for variants of the words in the dataset, by deriving the new tokens from the stem word, or it can be more sensitive to capitalization.
 
-One way to improve this algorithm is to use character level representation, with these the model could potentialy learn any variant of the words, by deriving the new tokens from the stem word... 
-
-On the other hand, we could improbe the Active Learning by usign MNLP, as proposed by [@]. The problem with the Least Confidence sampling is that desproportionaly chooses longer sentences, as it assumes those are harder to annotate...
-
-**COMPLETAR!!!!**
+On the other hand, we could improve the Active Learning by using as sampling method the _Maximum Normalized Log Probability_, also suggested in [@shen2017deep]. The problem with the _Least Confidence_ sampling is that it disproportionally chooses longer sentences, as it assumes those are harder to annotate. These could potentially achieve higher accuracy than using _rand_ sampling.
 
 
 # References
